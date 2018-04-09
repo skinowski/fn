@@ -96,6 +96,11 @@ func (r *gRPCRunner) TryExec(ctx context.Context, call pool.RunnerCall) (bool, e
 		// If we can't encode the model, no runner will ever be able to run this. Give up.
 		return true, err
 	}
+
+	// Engagement context, we cancel when done to free up this engagement.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	runnerConnection, err := r.client.Engage(ctx)
 	if err != nil {
 		logrus.WithError(err).Error("Unable to create client to runner node")
@@ -122,7 +127,7 @@ func (r *gRPCRunner) TryExec(ctx context.Context, call pool.RunnerCall) (bool, e
 			// Try the next runner
 		}
 		logrus.Debug("Runner committed invocation request, sending data frames")
-		done := make(chan error)
+		done := make(chan error, 1)
 		go receiveFromRunner(runnerConnection, call, done)
 		sendToRunner(call, runnerConnection)
 		return true, <-done
@@ -135,10 +140,15 @@ func (r *gRPCRunner) TryExec(ctx context.Context, call pool.RunnerCall) (bool, e
 }
 
 func sendToRunner(call pool.RunnerCall, protocolClient pb.RunnerProtocol_EngageClient) error {
+	defer protocolClient.CloseSend()
 	bodyReader := call.RequestBody()
 	writeBufferSize := 10 * 1024 // 10KB
 	writeBuffer := make([]byte, writeBufferSize)
 	for {
+		// WARNING/TODO: This blocks. This needs to be offloaded to a go-routine
+		// and perhaps buffered instead of holding on the LB-Runner reservation
+		// just because client was a slow writer. Currently this is at the mercy
+		// of gin server defaults on read timeout.
 		n, err := bodyReader.Read(writeBuffer)
 		logrus.Debugf("Wrote %v bytes to the runner", n)
 
@@ -173,6 +183,7 @@ func sendToRunner(call pool.RunnerCall, protocolClient pb.RunnerProtocol_EngageC
 }
 
 func receiveFromRunner(protocolClient pb.RunnerProtocol_EngageClient, c pool.RunnerCall, done chan error) {
+	defer close(done)
 	w := c.ResponseWriter()
 
 	for {
@@ -192,8 +203,13 @@ func receiveFromRunner(protocolClient pb.RunnerProtocol_EngageClient, c pool.Run
 				}
 			default:
 				logrus.Errorf("Unhandled meta type in start message: %v", meta)
+				return
 			}
 		case *pb.RunnerMsg_Data:
+			// WARNING/TODO: This blocks. This needs to be offloaded to a go-routine
+			// and perhaps buffered instead of holding on the LB-Runner reservation
+			// just because client was a slow reader. Currently this is at the mercy
+			// of gin server defaults on write timeout.
 			w.Write(body.Data.Data)
 		case *pb.RunnerMsg_Finished:
 			if body.Finished.Success {
@@ -201,15 +217,10 @@ func receiveFromRunner(protocolClient pb.RunnerProtocol_EngageClient, c pool.Run
 			} else {
 				logrus.Infof("Call finished unsuccessfully: %v", body.Finished.Details)
 			}
-			// There should be an EOF following the last packet
-			if _, err := protocolClient.Recv(); err != io.EOF {
-				logrus.WithError(err).Error("Did not receive expected EOF from runner stream")
-				done <- err
-			}
-			close(done)
 			return
 		default:
 			logrus.Errorf("Unhandled message type from runner: %v", body)
+			return
 		}
 	}
 }
