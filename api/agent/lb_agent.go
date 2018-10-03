@@ -143,6 +143,28 @@ func (a *lbAgent) Close() error {
 	return err
 }
 
+type Fake struct {
+	*http.ResponseWriter
+	origin http.ResponseWriter
+	ready  chan struct{}
+}
+
+func (f *Fake) Header() Header {
+	return f.origin.Header()
+}
+func (f *Fake) Write(data []byte) (int, error) {
+	return f.origin.Write(data)
+}
+func (f *Fake) WriteHeader(statusCode int) {
+	f.origin.WriteHeader(statusCode)
+	if call.Model().Type == models.TypeAcksync {
+		select {
+		case ready <- struct{}{}:
+		default:
+		}
+	}
+}
+
 // implements Agent
 func (a *lbAgent) Submit(callI Call) error {
 	call := callI.(*call)
@@ -177,8 +199,35 @@ func (a *lbAgent) Submit(callI Call) error {
 	statsDequeue(ctx)
 	statsStartRun(ctx)
 
-	err = a.placer.PlaceCall(a.rp, ctx, call)
-	return a.handleCallEnd(ctx, call, err, true)
+	// This is the tricky part... I wonder if we can install a fake http.ResponseWriter here
+	// that wraps original http.ResponseWriter and we intercept 'WriteHeader'.
+	call.w = &fake{
+		origin: call.w,
+		ready:  make(chan struct{}, 1),
+	}
+
+	errC := make(chan error, 1)
+	go func() {
+		var cancel func()
+		if call.Model().Type == models.TypeAcksync {
+			// a context that does not timeout... followed by a safety bound
+			ctx = common.BackgroundContext(ctx)
+			//  assuming PlacerTimeout of 30 secs, this (60 sec + function-execution time) is probably an OK safety net.
+			ctx, cancel = context.WithTimeout(ctx, 60+call.Timeout)
+			defer cancel()
+		}
+
+		err := a.placer.PlaceCall(a.rp, ctx, call)
+		errC <- a.handleCallEnd(ctx, call, err, true)
+	}()
+
+	// ready should only fire in async functions. Otherwise, we wait for errC.
+	select {
+	case err <- errC:
+		return err
+	case <-call.w.ready:
+		return nil
+	}
 }
 
 // setRequestGetBody sets GetBody function on the given http.Request if it is missing.  GetBody allows

@@ -385,6 +385,14 @@ func (ch *callHandle) prepHeaders() []*runner.HttpHeader {
 // received data is pushed to LB via gRPC sender queue.
 // Write also sends http headers/state to the LB.
 func (ch *callHandle) Write(data []byte) (int, error) {
+
+	if ch.c.Model().Type == models.TypeAcksync {
+		// WARNING: we might want to log headers, errors, here. But at this
+		// point we have already sent a 202 to the client. Any errors
+		// after this are unexpected/unknown container/processing errors.
+		return len(data), nil
+	}
+
 	var err error
 	ch.headerOnce.Do(func() {
 		// WARNING: we do fetch Status and Headers without
@@ -530,6 +538,9 @@ type pureRunner struct {
 	creds      credentials.TransportCredentials
 	a          Agent
 	status     statusTracker
+
+	lookupMap  map[string]*callHandle
+	loookupLck sync.Mutex
 }
 
 // implements Agent
@@ -554,14 +565,74 @@ func (pr *pureRunner) Close() error {
 	return nil
 }
 
+// BeforeCall called before a function is executed
+func (pr *pureRunner) BeforeCall(ctx context.Context, call *models.Call) error {
+	if call.Model().Type != models.TypeAcksync {
+		return nil
+	}
+
+	// We are here because call.Start() was successful. We are about to stream
+	// input to the container. We consider this "success" and ready for a 202
+	// response now.
+
+	pr.lookupLck.Lock()
+	state := pr.lookupMap[call.Id]
+	pr.lookupLck.Unlock()
+
+	if state == nil {
+		panic("cannot happen")
+	}
+
+	var err error
+
+	// Once here is unnecessary, but anyway....
+	ch.headerOnce.Do(func() {
+		err = state.enqueueMsg(&runner.RunnerMsg{
+			Body: &runner.RunnerMsg_ResultStart{
+				ResultStart: &runner.CallResultStart{
+					Meta: &runner.CallResultStart_Http{
+						Http: &runner.HttpRespMeta{
+							// WARNING: do we need any headers to-be echo'ed or added here?
+							StatusCode: int32(202),
+						},
+					},
+				},
+			},
+		})
+	})
+
+	return err
+}
+
+// AfterCall called after a function completes
+func (pr *pureRunner) AfterCall(ctx context.Context, call *models.Call) error {
+	// not used
+	return nil
+}
+
 // implements Agent
 func (pr *pureRunner) AddCallListener(cl fnext.CallListener) {
 	pr.a.AddCallListener(cl)
+	// add ourselves to the end. if everything goes well, then we will get called.
+	pr.a.AddCallListener(pr)
 }
 
 func (pr *pureRunner) spawnSubmit(state *callHandle) {
 	go func() {
+		if call.Model().Type == models.TypeAcksync {
+			pr.lookupLck.Lock()
+			pr.lookupMap[state.c.Id] = state
+			pr.lookupLck.Unlock()
+		}
+
 		err := pr.a.Submit(state.c)
+
+		if call.Model().Type == models.TypeAcksync {
+			pr.lookupLck.Lock()
+			delete(pr.lookupMap, state.c.Id)
+			pr.lookupLck.Unlock()
+		}
+
 		state.enqueueCallResponse(err)
 	}()
 }
