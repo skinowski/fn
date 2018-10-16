@@ -5,7 +5,34 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"go.opencensus.io/tag"
 )
+
+const (
+	// Ststus code due to processing in FN service components (Agent, LB, Runner, Docker)
+	StatusOriginService = "service"
+	// Status code due to processing in containers/function
+	StatusOriginFunction = "function"
+)
+
+var (
+	StatusOriginKey = MakeKey("origin")
+)
+
+// Insert a origin tag to context if Tag Map is present and tag is not already there.
+// Here we identify where the status code originated from.
+func SetStatusOrigin(ctx context.Context, origin string) {
+	tagMap := tag.FromContext(ctx)
+	if tagMap == nil {
+		return
+	}
+
+	mut := tag.Upsert(StatusOriginKey, origin)
+	_, err := mut.Mutate(tagMap)
+	if err != nil {
+		logrus.WithError(err).Fatalf("Error inserting origin=%s", origin)
+	}
+}
 
 type contextKey string
 

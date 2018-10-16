@@ -100,11 +100,11 @@ func RegisterAPIViews(tagKeys []string, dist []float64) {
 
 	// default tags for request and response
 	reqTags := []tag.Key{pathKey, methodKey}
-	respTags := []tag.Key{pathKey, methodKey, statusKey}
+	respTags := []tag.Key{pathKey, methodKey, statusKey, common.StatusOriginKey}
 
 	// add extra tags if not already in default tags for req/resp
 	for _, key := range tagKeys {
-		if key != "path" && key != "method" && key != "status" {
+		if key != "path" && key != "method" && key != "status" && key != "origin" {
 			respTags = append(respTags, common.MakeKey(key))
 		}
 		if key != "path" && key != "method" {
@@ -159,6 +159,10 @@ func apiMetricsWrap(s *Server) {
 			if err != nil {
 				logrus.Fatal(err)
 			}
+
+			// Add ourselves to blame here unless Agents already punched in an origin.
+			common.SetStatusOrigin(ctx, common.StatusOriginService)
+
 			stats.Record(ctx, apiResponseCountMeasure.M(0))
 			stats.Record(ctx, apiLatencyMeasure.M(int64(time.Since(start)/time.Millisecond)))
 		}

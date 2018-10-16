@@ -342,6 +342,11 @@ func (a *agent) handleCallEnd(ctx context.Context, call *call, slot Slot, err er
 	} else if err != nil {
 		statsErrors(ctx)
 	}
+
+	// If submit has not reported an error, then the status code origin is function itself.
+	if err == nil {
+		common.SetStatusOrigin(ctx, common.StatusOriginFunction)
+	}
 	return err
 }
 

@@ -255,6 +255,11 @@ func (a *lbAgent) handleCallEnd(ctx context.Context, call *call, err error, isFo
 	} else if err != nil {
 		statsErrors(ctx)
 	}
+
+	// If submit has not reported an error, then the status code origin is function itself.
+	if err == nil {
+		common.SetStatusOrigin(ctx, common.StatusOriginFunction)
+	}
 	return err
 }
 
