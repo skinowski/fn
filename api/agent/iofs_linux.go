@@ -30,7 +30,7 @@ func newTmpfsIOFS(ctx context.Context, cfg *Config) (*tmpfsIOFS, error) {
 		if err := dirIOFS.Close(); err != nil {
 			common.Logger(ctx).WithError(err).Error("failed to cleanup iofs dir")
 		}
-		return nil, fmt.Errorf("cannot mount/create tmpfs at %s", dirIOFS.AgentPath())
+		return nil, fmt.Errorf("cannot mount/create tmpfs at %s %v", dirIOFS.AgentPath(), err)
 	}
 	return &tmpfsIOFS{*dirIOFS}, nil
 }

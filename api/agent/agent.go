@@ -123,6 +123,13 @@ type Option func(*agent) error
 // RegistryToken is a reserved call extensions key to pass registry token
 const RegistryToken = "FN_REGISTRY_TOKEN"
 
+// implement common.IsFunctionOrigin()
+type functionOrigin struct {
+	error
+}
+
+func (t *functionOrigin) IsFunctionOrigin() bool { return true }
+
 // New creates an Agent that executes functions locally as Docker containers.
 func New(da CallHandler, options ...Option) Agent {
 
@@ -314,6 +321,10 @@ func (a *agent) submit(ctx context.Context, call *call) error {
 }
 
 func (a *agent) handleCallEnd(ctx context.Context, call *call, slot Slot, err error, isStarted bool) error {
+
+	if err != nil && common.IsFunctionOrigin(err) {
+		common.SetOrigin(ctx, common.StatusCodeOriginFunction)
+	}
 
 	if slot != nil {
 		slot.Close()
@@ -779,7 +790,7 @@ func (s *hotSlot) dispatch(ctx context.Context, call *call) chan error {
 		resp, err := s.udsClient.Do(req)
 		if err != nil {
 			common.Logger(ctx).WithError(err).Error("Got error from UDS socket")
-			errApp <- models.NewAPIError(http.StatusBadGateway, errors.New("error receiving function response"))
+			errApp <- functionOrigin{models.NewAPIError(http.StatusBadGateway, errors.New("error receiving function response"))}
 			return
 		}
 		common.Logger(ctx).WithField("resp", resp).Debug("Got resp from UDS socket")
@@ -789,14 +800,14 @@ func (s *hotSlot) dispatch(ctx context.Context, call *call) chan error {
 
 		ioErrChan := make(chan error, 1)
 		go func() {
-			ioErrChan <- writeResp(s.cfg.MaxResponseSize, resp, call.w)
+			ioErrChan <- functionOrigin{writeResp(s.cfg.MaxResponseSize, resp, call.w)}
 		}()
 
 		select {
 		case ioErr := <-ioErrChan:
 			errApp <- ioErr
 		case <-ctx.Done():
-			errApp <- ctx.Err()
+			errApp <- functionOrigin{ctx.Err()}
 		}
 	}()
 	return errApp
@@ -950,6 +961,13 @@ func (a *agent) prepCold(ctx context.Context, call *call, tok ResourceToken, ch 
 	}
 }
 
+func (a *agent) queueError(call *call, err error) error {
+	if err != nil {
+		call.slots.queueSlot(&hotSlot{done: make(chan struct{}), fatalErr: err})
+	}
+	return err
+}
+
 func (a *agent) runHot(ctx context.Context, call *call, tok ResourceToken, state ContainerState) {
 	// IMPORTANT: get a context that has a child span / logger but NO timeout
 	// TODO this is a 'FollowsFrom'
@@ -974,8 +992,7 @@ func (a *agent) runHot(ctx context.Context, call *call, tok ResourceToken, state
 	defer state.UpdateState(ctx, ContainerStateDone, call.slots)
 
 	container, err := newHotContainer(ctx, call, &a.cfg)
-	if err != nil {
-		call.slots.queueSlot(&hotSlot{done: make(chan struct{}), fatalErr: err})
+	if a.queueError(call, err) != nil {
 		return
 	}
 	defer container.Close()
@@ -1007,22 +1024,19 @@ func (a *agent) runHot(ctx context.Context, call *call, tok ResourceToken, state
 	ctx = common.WithLogger(ctx, logger)
 
 	cookie, err := a.driver.CreateCookie(ctx, container)
-	if err != nil {
-		call.slots.queueSlot(&hotSlot{done: make(chan struct{}), fatalErr: err})
+	if a.queueError(call, err) != nil {
 		return
 	}
 
 	defer cookie.Close(ctx)
 
 	err = a.driver.PrepareCookie(ctx, cookie)
-	if err != nil {
-		call.slots.queueSlot(&hotSlot{done: make(chan struct{}), fatalErr: err})
+	if a.queueError(call, err) != nil {
 		return
 	}
 
 	waiter, err := cookie.Run(ctx)
-	if err != nil {
-		call.slots.queueSlot(&hotSlot{done: make(chan struct{}), fatalErr: err})
+	if a.queueError(call, err) != nil {
 		return
 	}
 
@@ -1039,13 +1053,12 @@ func (a *agent) runHot(ctx context.Context, call *call, tok ResourceToken, state
 		select {
 		case err := <-udsAwait: // XXX(reed): need to leave a note about pairing ctx here?
 			// sends a nil error if all is good, we can proceed...
-			if err != nil {
-				call.slots.queueSlot(&hotSlot{done: make(chan struct{}), fatalErr: err})
+			if a.queueError(call, err) != nil {
 				return
 			}
 
 		case <-ctx.Done():
-			call.slots.queueSlot(&hotSlot{done: make(chan struct{}), fatalErr: ctx.Err()})
+			a.queueError(call, ctx.Err())
 			return
 		}
 

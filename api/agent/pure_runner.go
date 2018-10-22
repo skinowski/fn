@@ -241,27 +241,32 @@ func (ch *callHandle) enqueueCallResponse(err error) {
 		details = mcall.ID
 
 	}
-	log.Debugf("Sending Call Finish details=%v", details)
 
-	errTmp := ch.enqueueMsgStrict(&runner.RunnerMsg{
-		Body: &runner.RunnerMsg_Finished{Finished: &runner.CallFinished{
-			Success:     err == nil,
-			Details:     details,
-			ErrorCode:   int32(errCode),
-			ErrorStr:    errStr,
-			CreatedAt:   createdAt,
-			StartedAt:   startedAt,
-			CompletedAt: completedAt,
-		}}})
+	origin := common.GetOrigin(ch.ctx)
+	finished := &runner.CallFinished{
+		Success:      err == nil,
+		Details:      details,
+		ErrorCode:    int32(errCode),
+		ErrorStr:     errStr,
+		StatusOrigin: origin,
+		CreatedAt:    createdAt,
+		StartedAt:    startedAt,
+		CompletedAt:  completedAt,
+	}
 
+	log.Debugf("Sending Call Finish %+v", finished)
+
+	errTmp := ch.enqueueMsgStrict(&runner.RunnerMsg{Body: &runner.RunnerMsg_Finished{Finished: finished}})
 	if errTmp != nil {
-		log.WithError(errTmp).Infof("enqueueCallResponse Send Error details=%v err=%v:%v", details, errCode, errStr)
+		log.WithError(errTmp).Infof("enqueueCallResponse Send Error details=%v err=%v:%v origin=%v",
+			details, errCode, errStr, origin)
 		return
 	}
 
 	errTmp = ch.finalize()
 	if errTmp != nil {
-		log.WithError(errTmp).Infof("enqueueCallResponse Finalize Error details=%v err=%v:%v", details, errCode, errStr)
+		log.WithError(errTmp).Infof("enqueueCallResponse Finalize Error details=%v err=%v:%v origin=%v",
+			details, errCode, errStr, origin)
 	}
 }
 
@@ -621,7 +626,7 @@ func (pr *pureRunner) handleTryCall(tc *runner.TryCall, state *callHandle) error
 // Handles a client engagement
 func (pr *pureRunner) Engage(engagement runner.RunnerProtocol_EngageServer) error {
 	grpc.EnableTracing = false
-	ctx := engagement.Context()
+	ctx := common.SetOrigin(engagement.Context(), common.StatusCodeOriginService)
 	log := common.Logger(ctx)
 	// Keep lightweight tabs on what this runner is doing: for draindown tests
 	atomic.AddInt32(&pr.status.inflight, 1)
@@ -853,6 +858,8 @@ func (pr *pureRunner) handleStatusCall(ctx context.Context) (*runner.RunnerStatu
 
 // implements RunnerProtocolServer
 func (pr *pureRunner) Status(ctx context.Context, _ *empty.Empty) (*runner.RunnerStatus, error) {
+	ctx = common.SetOrigin(ctx, common.StatusCodeOriginService)
+
 	// Status using image name is disabled. We return inflight request count only
 	if pr.status.imageName == "" {
 		return &runner.RunnerStatus{

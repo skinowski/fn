@@ -131,16 +131,20 @@ func TranslateGRPCStatusToRunnerStatus(status *pb.RunnerStatus) *pool.RunnerStat
 	}
 }
 
-// implements Runner
-func (r *gRPCRunner) Status(ctx context.Context) (*pool.RunnerStatus, error) {
-	log := common.Logger(ctx).WithField("runner_addr", r.address)
+func prepareGRPCContext(ctx context.Context) context.Context {
 	rid := common.RequestIDFromContext(ctx)
 	if rid != "" {
 		// Create a new gRPC metadata where we store the request ID
 		mp := metadata.Pairs(common.RequestIDContextKey, rid)
 		ctx = metadata.NewOutgoingContext(ctx, mp)
 	}
+	return ctx
+}
 
+// implements Runner
+func (r *gRPCRunner) Status(ctx context.Context) (*pool.RunnerStatus, error) {
+	log := common.Logger(ctx).WithField("runner_addr", r.address)
+	ctx = prepareGRPCContext(ctx)
 	status, err := r.client.Status(ctx, &pb_empty.Empty{})
 	log.WithError(err).Debugf("Status Call %+v", status)
 	return TranslateGRPCStatusToRunnerStatus(status), err
@@ -165,12 +169,7 @@ func (r *gRPCRunner) TryExec(ctx context.Context, call pool.RunnerCall) (bool, e
 		return true, err
 	}
 
-	rid := common.RequestIDFromContext(ctx)
-	if rid != "" {
-		// Create a new gRPC metadata where we store the request ID
-		mp := metadata.Pairs(common.RequestIDContextKey, rid)
-		ctx = metadata.NewOutgoingContext(ctx, mp)
-	}
+	ctx = prepareGRPCContext(ctx)
 	runnerConnection, err := r.client.Engage(ctx)
 	if err != nil {
 		log.WithError(err).Error("Unable to create client to runner node")
@@ -355,6 +354,12 @@ DataLoop:
 		case *pb.RunnerMsg_Finished:
 			logCallFinish(log, body, w.Header(), statusCode)
 			recordFinishStats(ctx, body.Finished)
+
+			origin := body.Finished.GetStatusOrigin()
+			if origin != "" {
+				common.SetOrigin(ctx, origin)
+			}
+
 			if !body.Finished.Success {
 				err := parseError(body.Finished)
 				tryQueueError(err, done)
@@ -392,6 +397,7 @@ func logCallFinish(log logrus.FieldLogger, msg *pb.RunnerMsg_Finished, headers h
 		"RunnerErrorCode":  msg.Finished.GetErrorCode(),
 		"RunnerHttpStatus": httpStatus,
 		"FnHttpStatus":     headers.Get("Fn-Http-Status"),
+		"FnStatusOrigin":   msg.Finished.GetStatusOrigin(),
 	}).Infof("Call finished Details=%v ErrorStr=%v", msg.Finished.GetDetails(), msg.Finished.GetErrorStr())
 }
 

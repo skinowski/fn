@@ -710,8 +710,8 @@ func New(ctx context.Context, opts ...Option) *Server {
 	}
 
 	setMachineID()
-	s.Router.Use(loggerWrap, traceWrap, panicWrap) // TODO should be opts
-	optionalCorsWrap(s.Router)                     // TODO should be an opt
+	s.Router.Use(statusOriginWrap, loggerWrap, traceWrap, panicWrap) // TODO should be opts
+	optionalCorsWrap(s.Router)                                       // TODO should be an opt
 	apiMetricsWrap(s)
 	s.bindHandlers(ctx)
 

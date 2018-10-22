@@ -26,6 +26,7 @@ var (
 	pathKey   = common.MakeKey("path")
 	methodKey = common.MakeKey("method")
 	statusKey = common.MakeKey("status")
+	originKey = common.MakeKey("origin")
 
 	apiRequestCountMeasure  = common.MakeMeasure("api/request_count", "Count of API requests started", stats.UnitDimensionless)
 	apiResponseCountMeasure = common.MakeMeasure("api/response_count", "API response count", stats.UnitDimensionless)
@@ -100,11 +101,11 @@ func RegisterAPIViews(tagKeys []string, dist []float64) {
 
 	// default tags for request and response
 	reqTags := []tag.Key{pathKey, methodKey}
-	respTags := []tag.Key{pathKey, methodKey, statusKey}
+	respTags := []tag.Key{pathKey, methodKey, statusKey, originKey}
 
 	// add extra tags if not already in default tags for req/resp
 	for _, key := range tagKeys {
-		if key != "path" && key != "method" && key != "status" {
+		if key != "path" && key != "method" && key != "status" && key != "origin" {
 			respTags = append(respTags, common.MakeKey(key))
 		}
 		if key != "path" && key != "method" {
@@ -152,13 +153,16 @@ func apiMetricsWrap(s *Server) {
 			stats.Record(ctx, apiRequestCountMeasure.M(0))
 			c.Next()
 
+			origin := common.GetOrigin(c.Request.Context())
 			status := strconv.Itoa(c.Writer.Status())
 			ctx, err = tag.New(ctx,
 				tag.Upsert(statusKey, status),
+				tag.Upsert(originKey, origin),
 			)
 			if err != nil {
 				logrus.Fatal(err)
 			}
+
 			stats.Record(ctx, apiResponseCountMeasure.M(0))
 			stats.Record(ctx, apiLatencyMeasure.M(int64(time.Since(start)/time.Millisecond)))
 		}
@@ -183,6 +187,14 @@ func panicWrap(c *gin.Context) {
 			c.Abort()
 		}
 	}(c)
+	c.Next()
+}
+
+// statusOriginWrap returns a wrapper to instal a origin key/value into request context. This is used
+// to track if user or service triggered the status code in http response.
+func statusOriginWrap(c *gin.Context) {
+	ctx := common.SetOrigin(c.Request.Context(), common.StatusCodeOriginService)
+	c.Request = c.Request.WithContext(ctx)
 	c.Next()
 }
 

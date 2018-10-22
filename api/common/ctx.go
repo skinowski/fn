@@ -7,6 +7,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type ctxStatusOriginKey string
+
+var (
+	StatusCodeOriginService  = "service"
+	StatusCodeOriginFunction = "function"
+	StatusOriginCtxKey       = ctxStatusOriginKey("fn_status_origin")
+)
+
 type contextKey string
 
 // RequestIDContextKey is the name of the key used to store the request ID into the context
@@ -71,4 +79,22 @@ func BackgroundContext(ctx context.Context) context.Context {
 	return &contextWithNoDeadline{
 		original: ctx,
 	}
+}
+
+func GetOrigin(ctx context.Context) string {
+	origin, ok := ctx.Value(StatusOriginCtxKey).(*string)
+	if ok {
+		return *origin
+	}
+	return StatusCodeOriginService
+}
+
+func SetOrigin(ctx context.Context, value string) context.Context {
+	origin, ok := ctx.Value(StatusOriginCtxKey).(*string)
+	if ok {
+		*origin = value
+	} else {
+		ctx = context.WithValue(ctx, StatusOriginCtxKey, &value)
+	}
+	return ctx
 }

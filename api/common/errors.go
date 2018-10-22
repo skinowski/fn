@@ -10,6 +10,11 @@ type Temporary interface {
 	Temporary() bool
 }
 
+// errors that originate from user functions/containers
+type FunctionOrigin interface {
+	FunctionOrigin() bool
+}
+
 func IsTemporary(err error) bool {
 	v, ok := err.(Temporary)
 	return (ok && v.Temporary()) || isNet(err)
@@ -33,4 +38,21 @@ func isNet(err error) bool {
 		}
 	}
 	return false
+}
+
+// returns true if the error originated from user functions/containers
+func IsFunctionOrigin(err error) bool {
+	v, ok := err.(FunctionOrigin)
+	return (ok && v.FunctionOrigin())
+}
+
+// implement common.IsFunctionOrigin()
+type functionOrigin struct {
+	error
+}
+
+func (t *functionOrigin) IsFunctionOrigin() bool { return true }
+
+func newFunctionOrigin(err error) error {
+	return &functionOrigin{err}
 }

@@ -151,6 +151,10 @@ func (a *slotQueue) queueSlot(slot Slot) *slotToken {
 	return token
 }
 
+func (a *slotQueue) queueError(slot Slot, err error) {
+	a.queueSlot(&hotSlot{done: make(chan struct{}), fatalErr: err})
+}
+
 // isIdle() returns true is there's no activity for this slot queue. This
 // means no one is waiting, running or starting.
 func (a *slotQueue) isIdle() bool {

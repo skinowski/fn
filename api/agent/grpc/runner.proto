@@ -45,6 +45,7 @@ message CallFinished {
     string createdAt = 5;
     string startedAt = 6;
     string completedAt = 7;
+    string statusOrigin = 8;
 }
 
 message ClientMsg {
