@@ -994,8 +994,8 @@ func (s *Server) startGears(ctx context.Context, cancel context.CancelFunc) {
       / /_  / __ \
      / __/ / / / /
     /_/   /_/ /_/`
-	fmt.Println(runHeader)
-	fmt.Printf("        v%s\n\n", version.Version)
+	logrus.Info(runHeader)
+	logrus.Infof("        v%s\n\n", version.Version)
 
 	logrus.WithField("type", s.nodeType).Infof("Fn serving on `%v`", s.svcConfigs[WebServer].Addr)
 

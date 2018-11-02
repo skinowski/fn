@@ -16,12 +16,6 @@ import (
 )
 
 func TestCanExecuteFunction(t *testing.T) {
-	buf := setLogBuffer()
-	defer func() {
-		if t.Failed() {
-			t.Log(buf.String())
-		}
-	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -81,12 +75,6 @@ func TestCanExecuteFunction(t *testing.T) {
 }
 
 func TestCanExecuteBigOutput(t *testing.T) {
-	buf := setLogBuffer()
-	defer func() {
-		if t.Failed() {
-			t.Log(buf.String())
-		}
-	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -136,12 +124,6 @@ func TestCanExecuteBigOutput(t *testing.T) {
 }
 
 func TestCanExecuteTooBigOutput(t *testing.T) {
-	buf := setLogBuffer()
-	defer func() {
-		if t.Failed() {
-			t.Log(buf.String())
-		}
-	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -191,12 +173,6 @@ func TestCanExecuteTooBigOutput(t *testing.T) {
 }
 
 func TestCanExecuteEmptyOutput(t *testing.T) {
-	buf := setLogBuffer()
-	defer func() {
-		if t.Failed() {
-			t.Log(buf.String())
-		}
-	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -245,12 +221,6 @@ func TestCanExecuteEmptyOutput(t *testing.T) {
 }
 
 func TestBasicConcurrentExecution(t *testing.T) {
-	buf := setLogBuffer()
-	defer func() {
-		if t.Failed() {
-			t.Log(buf.String())
-		}
-	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 

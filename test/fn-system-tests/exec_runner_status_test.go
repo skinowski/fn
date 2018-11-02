@@ -38,13 +38,6 @@ func callFN(ctx context.Context, u string, content io.Reader, output io.Writer) 
 
 // We should not be able to invoke a StatusImage
 func TestCannotExecuteStatusImage(t *testing.T) {
-	buf := setLogBuffer()
-	defer func() {
-		if t.Failed() {
-			t.Log(buf.String())
-		}
-	}()
-
 	if StatusImage == "" {
 		t.Skip("no status image defined")
 	}
@@ -100,12 +93,6 @@ func (c *myCall) StdErr() io.ReadWriteCloser          { return nil }
 func (c *myCall) Model() *models.Call                 { return nil }
 
 func TestExecuteRunnerStatus(t *testing.T) {
-	buf := setLogBuffer()
-	defer func() {
-		if t.Failed() {
-			t.Log(buf.String())
-		}
-	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

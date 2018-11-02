@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/fnproject/fn/api/agent"
 	"github.com/fnproject/fn/api/agent/drivers"
@@ -14,7 +13,6 @@ import (
 	pool "github.com/fnproject/fn/api/runnerpool"
 	"github.com/fnproject/fn/api/server"
 	_ "github.com/fnproject/fn/api/server/defaultexts"
-	"github.com/gin-gonic/gin"
 
 	// We need docker client here, since we have a custom driver that wraps generic
 	// docker driver.
@@ -180,16 +178,20 @@ func CleanUpSystem(st *state) error {
 
 func SetUpAPINode(ctx context.Context) (*server.Server, error) {
 	curDir := pwd()
+
 	var defaultDB, defaultMQ string
+
 	defaultDB = fmt.Sprintf("sqlite3://%s/data/fn.db", curDir)
 	defaultMQ = fmt.Sprintf("bolt://%s/data/fn.mq", curDir)
+	logfile := fmt.Sprintf("file://%s/data/api.log", curDir)
+
 	nodeType := server.ServerTypeAPI
 	opts := make([]server.Option, 0)
 	opts = append(opts, server.WithWebPort(8085))
 	opts = append(opts, server.WithType(nodeType))
 	opts = append(opts, server.WithLogFormat(getEnv(server.EnvLogFormat, server.DefaultLogFormat)))
 	opts = append(opts, server.WithLogLevel(getEnv(server.EnvLogLevel, server.DefaultLogLevel)))
-	opts = append(opts, server.WithLogDest(getEnv(server.EnvLogDest, server.DefaultLogDest), "API"))
+	opts = append(opts, server.WithLogDest(getEnv(server.EnvLogDest, logfile), "API"))
 	opts = append(opts, server.WithDBURL(getEnv(server.EnvDBURL, defaultDB)))
 	opts = append(opts, server.WithMQURL(getEnv(server.EnvMQURL, defaultMQ)))
 	opts = append(opts, server.WithLogURL(""))
@@ -201,13 +203,17 @@ func SetUpAPINode(ctx context.Context) (*server.Server, error) {
 }
 
 func SetUpLBNode(ctx context.Context) (*server.Server, error) {
+
+	curDir := pwd()
+	logfile := fmt.Sprintf("file://%s/data/lb.log", curDir)
+
 	nodeType := server.ServerTypeLB
 	opts := make([]server.Option, 0)
 	opts = append(opts, server.WithWebPort(8081))
 	opts = append(opts, server.WithType(nodeType))
 	opts = append(opts, server.WithLogFormat(getEnv(server.EnvLogFormat, server.DefaultLogFormat)))
 	opts = append(opts, server.WithLogLevel(getEnv(server.EnvLogLevel, server.DefaultLogLevel)))
-	opts = append(opts, server.WithLogDest(getEnv(server.EnvLogDest, server.DefaultLogDest), "LB"))
+	opts = append(opts, server.WithLogDest(getEnv(server.EnvLogDest, logfile), "LB"))
 	opts = append(opts, server.WithDBURL(""))
 	opts = append(opts, server.WithMQURL(""))
 	opts = append(opts, server.WithLogURL(""))
@@ -248,6 +254,10 @@ func SetUpLBNode(ctx context.Context) (*server.Server, error) {
 }
 
 func SetUpPureRunnerNode(ctx context.Context, nodeNum int) (*server.Server, error) {
+
+	curDir := pwd()
+	logfile := fmt.Sprintf("file://%s/data/runner%d.log", curDir, nodeNum)
+
 	nodeType := server.ServerTypePureRunner
 	opts := make([]server.Option, 0)
 	opts = append(opts, server.WithWebPort(8082+nodeNum))
@@ -255,7 +265,7 @@ func SetUpPureRunnerNode(ctx context.Context, nodeNum int) (*server.Server, erro
 	opts = append(opts, server.WithType(nodeType))
 	opts = append(opts, server.WithLogFormat(getEnv(server.EnvLogFormat, server.DefaultLogFormat)))
 	opts = append(opts, server.WithLogLevel(getEnv(server.EnvLogLevel, server.DefaultLogLevel)))
-	opts = append(opts, server.WithLogDest(getEnv(server.EnvLogDest, server.DefaultLogDest), "PURE-RUNNER"))
+	opts = append(opts, server.WithLogDest(getEnv(server.EnvLogDest, logfile), "PURE-RUNNER"))
 	opts = append(opts, server.WithDBURL(""))
 	opts = append(opts, server.WithMQURL(""))
 	opts = append(opts, server.WithLogURL(""))
@@ -452,14 +462,3 @@ func (d *customDriver) Close() error {
 }
 
 var _ drivers.Driver = &customDriver{}
-
-// capture logs so they shut up when things are fine
-func setLogBuffer() *bytes.Buffer {
-	var buf bytes.Buffer
-	buf.WriteByte('\n')
-	logrus.SetOutput(&buf)
-	gin.DefaultErrorWriter = &buf
-	gin.DefaultWriter = &buf
-	log.SetOutput(&buf)
-	return &buf
-}
