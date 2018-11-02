@@ -71,7 +71,7 @@ type systemTestResourceProvider struct {
 
 func (rp *systemTestResourceProvider) ValidFn(appID string) *models.Fn {
 	fn := rp.ResourceProvider.ValidFn(appID)
-	fn.Memory = memory
+	fn.Memory = FunctionMemory
 	fn.Image = image
 	return fn
 }
@@ -372,7 +372,6 @@ const (
 	appName   = "systemtestapp"
 	routeName = "/systemtestroute"
 	image     = "fnproject/fn-test-utils"
-	memory    = 128
 	typ       = "sync"
 )
 

@@ -35,6 +35,12 @@ import (
 const (
 	LBAddress   = "http://127.0.0.1:8081"
 	StatusImage = "fnproject/fn-status-checker:latest"
+
+	// Hard set limit for memory for tests in MB
+	MaxRunnerMemory = 256
+
+	// Default memory used by all tests in MB
+	FunctionMemory = 128
 )
 
 func LB() (string, error) {
@@ -79,7 +85,7 @@ func setUpSystem() (*state, error) {
 	logrus.Info("Created LB node")
 
 	state.memory = os.Getenv(agent.EnvMaxTotalMemory)
-	os.Setenv(agent.EnvMaxTotalMemory, strconv.FormatUint(256*1024*1024, 10))
+	os.Setenv(agent.EnvMaxTotalMemory, strconv.FormatUint(MaxRunnerMemory*1024*1024, 10))
 
 	pr0, err := SetUpPureRunnerNode(ctx, 0)
 	if err != nil {

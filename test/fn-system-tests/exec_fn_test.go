@@ -33,7 +33,7 @@ func TestCanExecuteFunction(t *testing.T) {
 		Name:  id.New().String(),
 		Image: image,
 		ResourceConfig: models.ResourceConfig{
-			Memory: memory,
+			Memory: FunctionMemory,
 		},
 	}
 	fn = ensureFn(t, fn)
@@ -98,7 +98,7 @@ func TestCanExecuteBigOutput(t *testing.T) {
 		Name:  id.New().String(),
 		Image: image,
 		ResourceConfig: models.ResourceConfig{
-			Memory: memory,
+			Memory: FunctionMemory,
 		},
 	}
 	fn = ensureFn(t, fn)
@@ -153,7 +153,7 @@ func TestCanExecuteTooBigOutput(t *testing.T) {
 		Name:  id.New().String(),
 		Image: image,
 		ResourceConfig: models.ResourceConfig{
-			Memory: memory,
+			Memory: FunctionMemory,
 		},
 	}
 	fn = ensureFn(t, fn)
@@ -208,7 +208,7 @@ func TestCanExecuteEmptyOutput(t *testing.T) {
 		Name:  id.New().String(),
 		Image: image,
 		ResourceConfig: models.ResourceConfig{
-			Memory: memory,
+			Memory: FunctionMemory,
 		},
 	}
 	fn = ensureFn(t, fn)
@@ -262,7 +262,7 @@ func TestBasicConcurrentExecution(t *testing.T) {
 		Name:  id.New().String(),
 		Image: image,
 		ResourceConfig: models.ResourceConfig{
-			Memory: memory,
+			Memory: FunctionMemory,
 		},
 	}
 	fn = ensureFn(t, fn)

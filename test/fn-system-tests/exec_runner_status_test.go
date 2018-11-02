@@ -60,7 +60,7 @@ func TestCannotExecuteStatusImage(t *testing.T) {
 		Name:  id.New().String(),
 		Image: StatusImage,
 		ResourceConfig: models.ResourceConfig{
-			Memory: memory,
+			Memory: FunctionMemory,
 		},
 	}
 	fn = ensureFn(t, fn)
