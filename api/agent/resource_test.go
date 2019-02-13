@@ -163,7 +163,7 @@ func TestResourceGetSimple(t *testing.T) {
 
 	// ask for 4GB and 10 CPU
 	ctx, cancel := context.WithCancel(context.Background())
-	ch := trI.GetResourceToken(ctx, 4*1024, 1000, false)
+	ch := trI.GetResourceToken(ctx, 4*1024, 1000)
 	defer cancel()
 
 	_, err := fetchToken(ch)
@@ -182,7 +182,7 @@ func TestResourceGetSimple(t *testing.T) {
 
 	// ask for another 4GB and 10 CPU
 	ctx, cancel = context.WithCancel(context.Background())
-	ch = trI.GetResourceToken(ctx, 4*1024, 1000, false)
+	ch = trI.GetResourceToken(ctx, 4*1024, 1000)
 	defer cancel()
 
 	_, err = fetchToken(ch)
@@ -226,42 +226,49 @@ func TestResourceGetSimpleNB(t *testing.T) {
 
 	// ask for 4GB and 10 CPU
 	ctx, cancel := context.WithCancel(context.Background())
-	ch := trI.GetResourceToken(ctx, 4*1024, 1000, true)
+	ch := trI.GetResourceToken(ctx, 4*1024, 1000)
 	defer cancel()
 
-	tok := <-ch
-	if tok.Error() == nil {
+	var tok1 ResourceToken
+	var tok2 ResourceToken
+
+	select {
+	case tok1 = <-ch:
 		t.Fatalf("full system should not hand out token")
+	case <-time.After(time.Duration(50 * time.Millisecond)):
 	}
 
 	// reset back
 	vals.setDefaults()
 	setTrackerTestVals(tr, &vals)
 
-	tok1 := <-trI.GetResourceToken(ctx, 4*1024, 1000, true)
-	if tok1.Error() != nil {
+	select {
+	case tok1 = <-ch:
+	case <-time.After(time.Duration(50 * time.Millisecond)):
 		t.Fatalf("empty system should hand out token")
 	}
 
 	// ask for another 4GB and 10 CPU
 	ctx, cancel = context.WithCancel(context.Background())
-	ch = trI.GetResourceToken(ctx, 4*1024, 1000, true)
+	ch = trI.GetResourceToken(ctx, 4*1024, 1000)
 	defer cancel()
 
-	tok = <-ch
-	if tok.Error() == nil {
+	select {
+	case tok2 = <-ch:
 		t.Fatalf("full system should not hand out token")
+	case <-time.After(time.Duration(50 * time.Millisecond)):
 	}
 
 	// close means, giant token resources released
 	tok1.Close()
 
-	tok = <-trI.GetResourceToken(ctx, 4*1024, 1000, true)
-	if tok.Error() != nil {
+	select {
+	case tok2 = <-ch:
+	case <-time.After(time.Duration(50 * time.Millisecond)):
 		t.Fatalf("empty system should hand out token")
 	}
 
-	tok.Close()
+	tok2.Close()
 
 	// POOLS should all be empty now
 	getTrackerTestVals(tr, &vals)

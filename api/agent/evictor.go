@@ -213,3 +213,19 @@ func (e *evictor) PerformEviction(slotId string, mem, cpu uint64) []chan struct{
 
 	return completionChans
 }
+
+func FilterNotifyChans(input []chan struct{}) []chan struct{} {
+	if len(input) == 0 {
+		return input
+	}
+
+	output := make([]chan struct{}, 0, len(input))
+	for _, wait := range input {
+		select {
+		case <-wait:
+		default:
+			output = append(output, wait)
+		}
+	}
+	return output
+}

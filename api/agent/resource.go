@@ -52,9 +52,8 @@ type ResourceTracker interface {
 	// the channel will never receive anything. If it is not possible to fulfill this resource, the channel
 	// will never receive anything (use IsResourcePossible). If a resource token is available for the provided
 	// resource parameters, it will otherwise be sent once on the returned channel. The channel is never closed.
-	// if isNB is set, resource check is done and error token is returned without blocking.
 	// Memory is expected to be provided in MB units.
-	GetResourceToken(ctx context.Context, memory uint64, cpuQuota models.MilliCPUs, isNB bool) <-chan ResourceToken
+	GetResourceToken(ctx context.Context, memory uint64, cpuQuota models.MilliCPUs) <-chan ResourceToken
 
 	// IsResourcePossible returns whether it's possible to fulfill the requested resources on this
 	// machine. It must be called before GetResourceToken or GetResourceToken may hang.
@@ -63,6 +62,9 @@ type ResourceTracker interface {
 
 	// Retrieve current stats/usage
 	GetUtilization() ResourceUtilization
+
+	// Retrieve how much cpu or mem is required to meet this request
+	GetNeededCapacity(memory uint64, cpuQuota models.MilliCPUs) (uint64, models.MilliCPUs)
 }
 
 type resourceTracker struct {
@@ -96,24 +98,11 @@ func NewResourceTracker(cfg *Config) ResourceTracker {
 type ResourceToken interface {
 	// Close must be called by any thread that receives a token.
 	io.Closer
-	Error() error
-	NeededCapacity() (uint64, models.MilliCPUs)
 }
 
 type resourceToken struct {
 	once      sync.Once
-	err       error
-	needCpu   models.MilliCPUs
-	needMem   uint64
 	decrement func()
-}
-
-func (t *resourceToken) Error() error {
-	return t.err
-}
-
-func (t *resourceToken) NeededCapacity() (uint64, models.MilliCPUs) {
-	return t.needMem, t.needCpu
 }
 
 func (t *resourceToken) Close() error {
@@ -174,13 +163,9 @@ func (a *resourceTracker) allocResourcesLocked(memory uint64, cpuQuota models.Mi
 	}}
 }
 
-func (a *resourceTracker) getResourceTokenNB(memory uint64, cpuQuota models.MilliCPUs) ResourceToken {
-	if !a.IsResourcePossible(memory, cpuQuota) {
-		return &resourceToken{err: CapacityFull, needCpu: cpuQuota, needMem: memory}
-	}
+func (a *resourceTracker) GetNeededCapacity(memory uint64, cpuQuota models.MilliCPUs) (uint64, models.MilliCPUs) {
 	memory = memory * Mem1MB
 
-	var t ResourceToken
 	var needMem uint64
 	var needCpu models.MilliCPUs
 
@@ -189,48 +174,20 @@ func (a *resourceTracker) getResourceTokenNB(memory uint64, cpuQuota models.Mill
 	availMem := a.ramTotal - a.ramUsed
 	availCPU := a.cpuTotal - a.cpuUsed
 
-	if availMem >= memory && availCPU >= uint64(cpuQuota) {
-		t = a.allocResourcesLocked(memory, cpuQuota)
-	} else {
-		if availMem < memory {
-			needMem = (memory - availMem) / Mem1MB
-		}
-		if availCPU < uint64(cpuQuota) {
-			needCpu = models.MilliCPUs(uint64(cpuQuota) - availCPU)
-		}
-		t = &resourceToken{err: CapacityFull, needCpu: needCpu, needMem: needMem}
+	if availMem < memory {
+		needMem = (memory - availMem) / Mem1MB
+	}
+	if availCPU < uint64(cpuQuota) {
+		needCpu = models.MilliCPUs(uint64(cpuQuota) - availCPU)
 	}
 
 	a.cond.L.Unlock()
-	return t
-}
-
-func (a *resourceTracker) getResourceTokenNBChan(ctx context.Context, memory uint64, cpuQuota models.MilliCPUs) <-chan ResourceToken {
-	ctx, span := trace.StartSpan(ctx, "agent_get_resource_token_nbio_chan")
-
-	ch := make(chan ResourceToken)
-	go func() {
-		defer span.End()
-		t := a.getResourceTokenNB(memory, cpuQuota)
-
-		select {
-		case ch <- t:
-		case <-ctx.Done():
-			// if we can't send b/c nobody is waiting anymore, need to decrement here
-			t.Close()
-		}
-	}()
-
-	return ch
+	return needMem, needCpu
 }
 
 // the received token should be passed directly to launch (unconditionally), launch
 // will close this token (i.e. the receiver should not call Close)
-func (a *resourceTracker) GetResourceToken(ctx context.Context, memory uint64, cpuQuota models.MilliCPUs, isNB bool) <-chan ResourceToken {
-	if isNB {
-		return a.getResourceTokenNBChan(ctx, memory, cpuQuota)
-	}
-
+func (a *resourceTracker) GetResourceToken(ctx context.Context, memory uint64, cpuQuota models.MilliCPUs) <-chan ResourceToken {
 	ch := make(chan ResourceToken)
 
 	if !a.IsResourcePossible(memory, cpuQuota) {
