@@ -455,6 +455,8 @@ func (a *agent) checkLaunch(ctx context.Context, call *call, caller slotCaller) 
 		return
 	}
 
+	common.Logger(ctx).Info("starting new container")
+
 	state := NewContainerState()
 	state.UpdateState(ctx, ContainerStateWait, call.slots)
 
@@ -511,6 +513,7 @@ func (a *agent) checkLaunch(ctx context.Context, call *call, caller slotCaller) 
 		} else if a.shutWg.AddSession(1) {
 			go func() {
 				// NOTE: runHot will not inherit the timeout from ctx (ignore timings)
+				common.Logger(ctx).Info("starting new hot container")
 				a.runHot(ctx, caller, call, tok, state)
 				a.shutWg.DoneSession()
 			}()

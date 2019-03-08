@@ -408,7 +408,7 @@ func (c *cookie) PullImage(ctx context.Context) error {
 
 	err = c.drv.docker.PullImage(docker.PullImageOptions{Repository: repo, Tag: c.imgTag, Context: ctx}, *cfg)
 	if err != nil {
-		log.WithError(err).Info("Failed to pull image")
+		log.Infof("Failed to pull image %+v", err)
 
 		// TODO need to inspect for hub or network errors and pick; for now, assume
 		// 500 if not a docker error
@@ -416,6 +416,7 @@ func (c *cookie) PullImage(ctx context.Context) error {
 		code := http.StatusBadGateway
 		if dErr, ok := err.(*docker.Error); ok {
 			msg = dockerMsg(dErr)
+			log.Infof("Failed to pull image error code: %+v", dErr.Status)
 			if dErr.Status >= 400 && dErr.Status < 500 {
 				code = dErr.Status // decap 4xx errors
 			}

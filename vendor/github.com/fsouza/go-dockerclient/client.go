@@ -35,6 +35,8 @@ import (
 	"github.com/docker/docker/pkg/homedir"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/fsouza/go-dockerclient/internal/jsonmessage"
+
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -604,6 +606,7 @@ func (c *Client) stream(method, path string, streamOptions streamOptions) error 
 		}
 	}
 	defer resp.Body.Close()
+	logrus.Errorf("got resp %v", resp.StatusCode)
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		return newError(resp)
 	}
